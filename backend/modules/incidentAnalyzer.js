@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { draftTicket } from "./geminiClient.js";
+import { draftTicket } from "./llmDrafter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MOCK_LOGS_PATH = path.join(__dirname, "..", "data", "mockLogs.json");

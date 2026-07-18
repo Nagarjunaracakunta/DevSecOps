@@ -20,12 +20,13 @@ pipeline that ties together four pieces:
    a GitHub PR via Octokit — or, with no `GITHUB_TOKEN`/`GITHUB_REPO`
    configured, returns a dry-run preview of the branch/diff/PR body instead.
 4. **Log-incident-to-Jira-ticket pipeline** (`backend/modules/incidentAnalyzer.js`,
-   `backend/modules/geminiClient.js`) — scans error logs (mock Splunk/
+   `backend/modules/llmDrafter.js`) — scans error logs (mock Splunk/
    Elasticsearch-style data by default), drafts a Jira ticket (summary,
-   description, priority) per incident using Google Gemini when
-   `GEMINI_API_KEY` is set (otherwise a deterministic rule-based draft), shows
-   you the draft to review, and creates the ticket via the Jira MCP server's
-   `create_ticket` tool once you confirm.
+   description, priority) per incident using Groq or Gemini (whichever's
+   `GROQ_API_KEY`/`GEMINI_API_KEY` is set — Groq is tried first) or a
+   deterministic rule-based draft if neither is set, shows you the draft to
+   review, and creates the ticket via the Jira MCP server's `create_ticket`
+   tool once you confirm.
 
 The Express + Socket.IO backend (`backend/server.js`) wires all four
 together and streams live updates to a React/Vite dashboard.
@@ -113,10 +114,13 @@ log file is found.
 ### Log-incident-to-Jira-ticket pipeline
 
 Works with zero config (deterministic rule-based ticket drafts from the mock
-log data in `backend/data/mockLogs.json`). To have Gemini draft the
+log data in `backend/data/mockLogs.json`). To have an LLM draft the
 summary/description/priority instead:
 ```bash
-export GEMINI_API_KEY=...   # aistudio.google.com — free tier, no card required
+export GROQ_API_KEY=...     # console.groq.com — free tier, no card required (tried first)
+# or
+export GEMINI_API_KEY=...   # aistudio.google.com (note: some Google Cloud-issued
+                             # keys need billing enabled even for "free tier" quota)
 ```
 Click **"Scan for incidents"** in the dashboard, review each drafted ticket,
 then **"Create Jira ticket"** — this calls the same Jira MCP server (real or

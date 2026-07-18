@@ -1,7 +1,7 @@
 // Drafts Jira ticket fields (summary/description/priority) from a log
-// incident. Uses Google Gemini (free-tier API key, no billing required) when
-// GEMINI_API_KEY is set; otherwise falls back to a deterministic, rule-based
-// draft so the pipeline still works with zero configuration.
+// incident using Google Gemini. Only called when GEMINI_API_KEY is set;
+// throws on any failure — the caller (llmDrafter.js) decides what to fall
+// back to.
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 const RESPONSE_SCHEMA = {
@@ -40,7 +40,7 @@ function sleep(ms) {
 // Free-tier Gemini keys have low per-minute request limits, so a burst of
 // calls (e.g. scanning several incidents back to back) can hit a 429 even
 // well under the daily quota. Retry with backoff before giving up.
-async function draftTicketWithGemini(incident, attempt = 1) {
+export async function draftTicketWithGemini(incident, attempt = 1) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {
     method: "POST",
@@ -67,40 +67,4 @@ async function draftTicketWithGemini(incident, attempt = 1) {
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Gemini returned no content");
   return JSON.parse(text);
-}
-
-function priorityFromLevel(level, occurrences) {
-  if (level === "CRITICAL") return "Highest";
-  if (level === "ERROR") return occurrences > 100 ? "Highest" : "High";
-  if (level === "WARN") return "Medium";
-  return "Low";
-}
-
-function draftTicketDeterministic(incident) {
-  return {
-    summary: `${incident.errorCode}: ${incident.message} (${incident.service})`,
-    description: [
-      `Detected ${incident.occurrences} occurrence(s) of ${incident.errorCode} in ${incident.service} between ${incident.firstSeen} and ${incident.lastSeen}.`,
-      "",
-      `Message: ${incident.message}`,
-      "",
-      "Sample log:",
-      "```",
-      incident.sample,
-      "```",
-    ].join("\n"),
-    priority: priorityFromLevel(incident.level, incident.occurrences),
-  };
-}
-
-export async function draftTicket(incident) {
-  if (!isGeminiConfigured()) {
-    return { ...draftTicketDeterministic(incident), draftedBy: "rules" };
-  }
-  try {
-    const draft = await draftTicketWithGemini(incident);
-    return { ...draft, draftedBy: "gemini" };
-  } catch (err) {
-    return { ...draftTicketDeterministic(incident), draftedBy: "rules", llmError: err.message };
-  }
 }
