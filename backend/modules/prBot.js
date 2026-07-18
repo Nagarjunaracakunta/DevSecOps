@@ -80,11 +80,16 @@ async function ensureRepoInitialized() {
   const isRepo = await git.checkIsRepo();
   if (!isRepo) {
     await git.init();
-    await git.addConfig("user.email", "devsecops-bot@example.com");
-    await git.addConfig("user.name", "DevSecOps Copilot Bot");
+    await git.branch(["-M", "main"]);
+  }
+  // Set every time, not just on first init — a fresh container (e.g. Render's
+  // ephemeral disk after a redeploy) has no global git identity configured,
+  // so relying on a one-time setup step is fragile.
+  await git.addConfig("user.email", "devsecops-bot@example.com");
+  await git.addConfig("user.name", "DevSecOps Copilot Bot");
+  if (!isRepo) {
     await git.add(".");
     await git.commit("chore: initial import of watched-repo demo files");
-    await git.branch(["-M", "main"]);
   }
   return git;
 }
