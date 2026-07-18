@@ -3,3 +3,5 @@ node_modules/
 dist/
 *.log
 .scratch/
+# The PR bot initializes this as its own nested repo at runtime; never track it.
+backend/watched-repo/.git/

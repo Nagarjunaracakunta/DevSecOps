@@ -4,6 +4,7 @@
 // a real GitHub PR (if GITHUB_TOKEN + GITHUB_REPO are set) or returns a
 // dry-run preview of what the PR would contain.
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import simpleGit from "simple-git";
@@ -103,6 +104,18 @@ async function ensureRemoteConfigured(git, remoteUrl) {
   }
 }
 
+// git push over a flaky egress path occasionally fails transfer mid-stream
+// ("index-pack failed") even when auth/refs are fine — one retry clears it.
+async function pushWithRetry(git, args, attempts = 2) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await git.push(args);
+    } catch (err) {
+      if (attempt === attempts) throw err;
+    }
+  }
+}
+
 // Keeps the local main in sync with the remote's main so fix branches are
 // always cut from the real base — and, on the very first run against a
 // brand-new empty target repo, seeds it with the local demo files instead.
@@ -113,14 +126,20 @@ async function syncWithRemoteMain(git) {
     await git.reset(["--hard", "origin/main"]);
   } catch {
     await git.checkout("main");
-    await git.push(["-u", "origin", "main"]);
+    await pushWithRetry(git, ["-u", "origin", "main"]);
   }
 }
 
 async function ensureRepoInitialized() {
   const git = simpleGit(REPO_DIR);
-  const isRepo = await git.checkIsRepo();
-  if (!isRepo) {
+  // NOTE: git.checkIsRepo() walks up parent directories, so it reports
+  // `true` even when watched-repo/ has no .git of its own — it was just
+  // detecting this app's own outer repo. That meant every git operation
+  // here (checkout/commit/push, and remote reconfiguration once a
+  // GitHub token is set) was silently running against the real app repo
+  // instead of an isolated one. Check for watched-repo/.git directly instead.
+  const hasOwnGitDir = existsSync(path.join(REPO_DIR, ".git"));
+  if (!hasOwnGitDir) {
     await git.init();
     await git.branch(["-M", "main"]);
   }
@@ -129,7 +148,12 @@ async function ensureRepoInitialized() {
   // so relying on a one-time setup step is fragile.
   await git.addConfig("user.email", "devsecops-bot@example.com");
   await git.addConfig("user.name", "DevSecOps Copilot Bot");
-  if (!isRepo) {
+  // Some cloud egress paths negotiate HTTP/2 with GitHub in a way that
+  // corrupts the git-receive-pack stream ("index-pack failed" / "did not
+  // receive expected object" on push) even for tiny payloads. Forcing
+  // HTTP/1.1 for this repo's git operations is the standard workaround.
+  await git.addConfig("http.version", "HTTP/1.1");
+  if (!hasOwnGitDir) {
     await git.add(".");
     await git.commit("chore: initial import of watched-repo demo files");
   }
@@ -206,7 +230,7 @@ export async function createFixPr(ticketKey) {
   let result;
   if (githubToken && githubRepo) {
     const [owner, repo] = githubRepo.split("/");
-    await git.push(["-u", "origin", branchName, "--force"]);
+    await pushWithRetry(git, ["-u", "origin", branchName, "--force"]);
     const octokit = new Octokit({ auth: githubToken });
     let pr;
     try {
