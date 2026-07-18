@@ -1,0 +1,91 @@
+[
+  {
+    "key": "SEC-101",
+    "summary": "Hardcoded Stripe API key committed in checkout service",
+    "status": "Open",
+    "priority": "Critical",
+    "reporter": "security-bot",
+    "created": "2026-07-10T09:12:00Z",
+    "description": "Our secret-scanning pipeline flagged a live-looking Stripe API key hardcoded directly in the payment charge path. This key is also being written to application logs on every charge, which multiplies the exposure. Needs to be pulled out into an environment variable / secrets manager immediately and the log line scrubbed.",
+    "comments": [
+      {
+        "author": "security-bot",
+        "timestamp": "2026-07-10T09:12:00Z",
+        "body": "Auto-filed from secret-scanner run #4821. Match found in paymentService.js."
+      },
+      {
+        "author": "priya.eng",
+        "timestamp": "2026-07-10T11:30:00Z",
+        "body": "Confirmed, this looks like a placeholder/test key but we should treat it as live until proven otherwise. Rotating just in case."
+      },
+      {
+        "author": "priya.eng",
+        "timestamp": "2026-07-11T08:05:00Z",
+        "body": "Assigning to the on-call rotation for an emergency patch."
+      }
+    ],
+    "logs": {
+      "source": "prod-app-server-03 / app.log",
+      "stacktrace": "at chargeCustomer (watched-repo/paymentService.js:3:9)\nat processPayment (watched-repo/checkoutController.js:22:14)\nat Router.handle (express/lib/router/index.js:284:12)",
+      "raw": "2026-07-10T09:11:42.881Z [INFO] Charging cus_9F2xz amount 4200 with key sk_live_51Hxxxxxxxxxxxxxxxxxxxx\n2026-07-10T09:11:42.885Z [WARN] secret-scanner: pattern match 'stripeApiKey' in paymentService.js line 3"
+    },
+    "affectedFile": "paymentService.js",
+    "affectedLine": 3
+  },
+  {
+    "key": "SEC-102",
+    "summary": "Remote code execution risk via eval() in template renderer",
+    "status": "Open",
+    "priority": "Critical",
+    "reporter": "priya.eng",
+    "created": "2026-07-12T14:20:00Z",
+    "description": "The template renderer evaluates user-supplied expressions directly with eval(), which means any user who can influence the expression string can run arbitrary JS on the server. A pen-test finding from last week's engagement calls this out as a P1. Needs to be replaced with a safe expression evaluator (no eval/new Function).",
+    "comments": [
+      {
+        "author": "pentest-report-import",
+        "timestamp": "2026-07-12T14:20:00Z",
+        "body": "Imported from external pentest report, finding #7: 'Server-side template injection via eval()'."
+      },
+      {
+        "author": "arjun.eng",
+        "timestamp": "2026-07-13T09:00:00Z",
+        "body": "Reproduced locally — passing `require('child_process').execSync('id')` as the expression runs it server-side. Definitely needs a fix."
+      }
+    ],
+    "logs": {
+      "source": "pentest-findings/report-2026-07.json",
+      "stacktrace": "at renderTemplate (watched-repo/templateRenderer.js:3:18)\nat TemplateService.render (watched-repo/templateService.js:45:10)",
+      "raw": "2026-07-13T09:01:15.002Z [ERROR] Unexpected eval() execution triggered by pentest payload id=finding-7\n2026-07-13T09:01:15.010Z [ERROR] child_process spawned from within renderTemplate() — treat as RCE"
+    },
+    "affectedFile": "templateRenderer.js",
+    "affectedLine": 3
+  },
+  {
+    "key": "SEC-103",
+    "summary": "SQL injection in user search endpoint",
+    "status": "In Progress",
+    "priority": "High",
+    "reporter": "arjun.eng",
+    "created": "2026-07-14T10:05:00Z",
+    "description": "The user search endpoint builds its SQL query via raw string concatenation of the `name` query param. A crafted name value can break out of the query and inject arbitrary SQL. Needs to move to parameterized queries.",
+    "comments": [
+      {
+        "author": "arjun.eng",
+        "timestamp": "2026-07-14T10:05:00Z",
+        "body": "Found while reviewing slow-query logs — a request with name=' OR '1'='1 returned the entire users table."
+      },
+      {
+        "author": "priya.eng",
+        "timestamp": "2026-07-14T15:40:00Z",
+        "body": "Confirmed in staging. Marking High since it's an unauthenticated endpoint."
+      }
+    ],
+    "logs": {
+      "source": "db-slow-query.log",
+      "stacktrace": "at searchUsersByName (watched-repo/userSearch.js:3:17)\nat UsersController.search (watched-repo/usersController.js:31:22)",
+      "raw": "2026-07-14T09:58:03.221Z [WARN] slow query returned 48213 rows (expected < 50): SELECT * FROM users WHERE name = '' OR '1'='1'"
+    },
+    "affectedFile": "userSearch.js",
+    "affectedLine": 3
+  }
+]

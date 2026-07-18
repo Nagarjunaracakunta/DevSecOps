@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: devsecops-copilot-backend
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install --prefix backend && npm install --prefix mcp-jira-server
+    startCommand: npm --prefix backend start
+    envVars:
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
