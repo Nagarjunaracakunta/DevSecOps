@@ -79,12 +79,13 @@ const FIXERS = {
 const KNOWN_WATCHED_FILES = ["paymentService.js", "templateRenderer.js", "userSearch.js"];
 
 // The mock tickets carry an explicit affectedFile/affectedLine field; real
-// Jira tickets won't, so fall back to scanning the fetched logs text for one
-// of the known demo filenames (expected to appear in an attached log/stack
-// trace, e.g. "at chargeCustomer (watched-repo/paymentService.js:3:9)").
+// Jira tickets won't, so fall back to scanning the fetched logs text (or the
+// ticket description, since attachments aren't always available) for one of
+// the known demo filenames — e.g. "at chargeCustomer
+// (watched-repo/paymentService.js:3:9)".
 function detectAffectedFile(ticket, logs) {
   if (ticket.affectedFile) return ticket.affectedFile;
-  const text = `${logs.stacktrace || ""}\n${logs.raw || ""}`;
+  const text = `${logs.stacktrace || ""}\n${logs.raw || ""}\n${ticket.description || ""}`;
   return KNOWN_WATCHED_FILES.find((file) => text.includes(file)) ?? null;
 }
 
