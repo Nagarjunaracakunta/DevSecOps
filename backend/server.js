@@ -9,10 +9,16 @@ import { startWatching } from "./modules/codeAnalyzer.js";
 import { listTickets, getTicket, getLogs } from "./modules/mcpJiraClient.js";
 import { createFixPr } from "./modules/prBot.js";
 
+function normalizeOrigin(raw) {
+  if (!raw || raw === "*") return "*";
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WATCH_DIR = path.join(__dirname, "watched-repo");
 const PORT = process.env.PORT || 4000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const CORS_ORIGIN = normalizeOrigin(process.env.CORS_ORIGIN);
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
