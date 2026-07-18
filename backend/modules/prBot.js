@@ -76,6 +76,18 @@ const FIXERS = {
   "sql-string-concat": fixSqlConcat,
 };
 
+const KNOWN_WATCHED_FILES = ["paymentService.js", "templateRenderer.js", "userSearch.js"];
+
+// The mock tickets carry an explicit affectedFile/affectedLine field; real
+// Jira tickets won't, so fall back to scanning the fetched logs text for one
+// of the known demo filenames (expected to appear in an attached log/stack
+// trace, e.g. "at chargeCustomer (watched-repo/paymentService.js:3:9)").
+function detectAffectedFile(ticket, logs) {
+  if (ticket.affectedFile) return ticket.affectedFile;
+  const text = `${logs.stacktrace || ""}\n${logs.raw || ""}`;
+  return KNOWN_WATCHED_FILES.find((file) => text.includes(file)) ?? null;
+}
+
 // Accepts "owner/repo" but also tolerates a full URL/.git suffix/trailing
 // slash, since it's easy to paste the wrong form into an env var.
 function normalizeGithubRepoSlug(raw) {
@@ -197,11 +209,19 @@ export async function createFixPr(ticketKey) {
     throw new Error(`No automated fixer available for ticket ${ticketKey}`);
   }
 
-  const filePath = path.join(REPO_DIR, ticket.affectedFile);
+  const affectedFile = detectAffectedFile(ticket, logs);
+  if (!affectedFile) {
+    throw new Error(
+      `Could not determine which watched-repo file ${ticketKey} relates to. ` +
+        `Make sure the ticket's attachments/description mention one of: ${KNOWN_WATCHED_FILES.join(", ")}`
+    );
+  }
+
+  const filePath = path.join(REPO_DIR, affectedFile);
   const original = await fs.readFile(filePath, "utf8");
   const fixed = fixer(original);
   if (fixed === original) {
-    throw new Error(`Fixer for ${ruleId} made no changes to ${ticket.affectedFile} — pattern not found`);
+    throw new Error(`Fixer for ${ruleId} made no changes to ${affectedFile} — pattern not found`);
   }
 
   const git = await ensureRepoInitialized();
@@ -217,7 +237,7 @@ export async function createFixPr(ticketKey) {
   await git.checkoutLocalBranch(branchName);
 
   await fs.writeFile(filePath, fixed, "utf8");
-  await git.add(ticket.affectedFile);
+  await git.add(affectedFile);
   const commitMessage = `fix(${ticket.key}): ${ticket.summary}`;
   await git.commit(commitMessage);
 
@@ -252,7 +272,7 @@ export async function createFixPr(ticketKey) {
     ...result,
     ticketKey: ticket.key,
     ruleId,
-    file: ticket.affectedFile,
+    file: affectedFile,
     diff: { before: original, after: fixed },
   };
 }
