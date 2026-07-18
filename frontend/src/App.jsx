@@ -307,8 +307,12 @@ export default function App() {
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/api/tickets`)
-      .then((r) => r.json())
-      .then(setTickets)
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+        if (!Array.isArray(body)) throw new Error("Unexpected response shape from /api/tickets");
+        setTickets(body);
+      })
       .catch((err) => setConnectionError(`Could not reach backend at ${BACKEND_URL}: ${err.message}`));
   }, []);
 
@@ -339,9 +343,13 @@ export default function App() {
 
   const selectTicket = (key) => {
     setSelectedKey(key);
+    setTicketDetail(null);
     fetch(`${BACKEND_URL}/api/tickets/${key}`)
-      .then((r) => r.json())
-      .then(setTicketDetail)
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+        setTicketDetail(body);
+      })
       .catch((err) => setConnectionError(err.message));
   };
 

@@ -23,12 +23,19 @@ function baseUrl() {
 }
 
 async function jiraFetch(pathAndQuery) {
-  const res = await fetch(`${baseUrl()}${pathAndQuery}`, {
+  const url = `${baseUrl()}${pathAndQuery}`;
+  const res = await fetch(url, {
     headers: { Authorization: authHeader(), Accept: "application/json" },
   });
-  if (!res.ok) {
+  const contentType = res.headers.get("content-type") || "";
+  // A 200 with an HTML body (e.g. a login/redirect page) is as much a
+  // misconfiguration as a non-2xx status — JIRA_BASE_URL is usually the
+  // culprit — so check content-type rather than assuming res.ok means JSON.
+  if (!res.ok || !contentType.includes("application/json")) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Jira API ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
+    throw new Error(
+      `Jira API request to ${url} failed (status ${res.status}, content-type "${contentType}"): ${body.slice(0, 300)}`
+    );
   }
   return res.json();
 }
