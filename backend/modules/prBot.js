@@ -75,6 +75,36 @@ const FIXERS = {
   "sql-string-concat": fixSqlConcat,
 };
 
+function buildRemoteUrl() {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO; // "owner/repo"
+  if (!token || !repo) return null;
+  return `https://x-access-token:${token}@github.com/${repo}.git`;
+}
+
+async function ensureRemoteConfigured(git, remoteUrl) {
+  const remotes = await git.getRemotes();
+  if (remotes.some((r) => r.name === "origin")) {
+    await git.remote(["set-url", "origin", remoteUrl]);
+  } else {
+    await git.addRemote("origin", remoteUrl);
+  }
+}
+
+// Keeps the local main in sync with the remote's main so fix branches are
+// always cut from the real base — and, on the very first run against a
+// brand-new empty target repo, seeds it with the local demo files instead.
+async function syncWithRemoteMain(git) {
+  try {
+    await git.fetch("origin", "main");
+    await git.checkout("main");
+    await git.reset(["--hard", "origin/main"]);
+  } catch {
+    await git.checkout("main");
+    await git.push(["-u", "origin", "main"]);
+  }
+}
+
 async function ensureRepoInitialized() {
   const git = simpleGit(REPO_DIR);
   const isRepo = await git.checkIsRepo();
@@ -91,6 +121,13 @@ async function ensureRepoInitialized() {
     await git.add(".");
     await git.commit("chore: initial import of watched-repo demo files");
   }
+
+  const remoteUrl = buildRemoteUrl();
+  if (remoteUrl) {
+    await ensureRemoteConfigured(git, remoteUrl);
+    await syncWithRemoteMain(git);
+  }
+
   return git;
 }
 
@@ -135,12 +172,13 @@ export async function createFixPr(ticketKey) {
   await git.checkout("main");
   const branchName = `fix/${ticket.key.toLowerCase()}`;
 
+  // Always cut the fix branch fresh from the current main rather than reusing
+  // a stale local branch from an earlier run in this same container.
   const branches = await git.branchLocal();
   if (branches.all.includes(branchName)) {
-    await git.checkout(branchName);
-  } else {
-    await git.checkoutLocalBranch(branchName);
+    await git.deleteLocalBranch(branchName, true);
   }
+  await git.checkoutLocalBranch(branchName);
 
   await fs.writeFile(filePath, fixed, "utf8");
   await git.add(ticket.affectedFile);
@@ -156,9 +194,18 @@ export async function createFixPr(ticketKey) {
   let result;
   if (githubToken && githubRepo) {
     const [owner, repo] = githubRepo.split("/");
-    await git.push(["-u", "origin", branchName]);
+    await git.push(["-u", "origin", branchName, "--force"]);
     const octokit = new Octokit({ auth: githubToken });
-    const { data: pr } = await octokit.pulls.create({ owner, repo, title, head: branchName, base: "main", body });
+    let pr;
+    try {
+      ({ data: pr } = await octokit.pulls.create({ owner, repo, title, head: branchName, base: "main", body }));
+    } catch (err) {
+      const alreadyExists = err.status === 422 && /already exists/i.test(JSON.stringify(err.response?.data ?? ""));
+      if (!alreadyExists) throw err;
+      const { data: existing } = await octokit.pulls.list({ owner, repo, head: `${owner}:${branchName}`, state: "open" });
+      if (!existing.length) throw err;
+      [pr] = existing;
+    }
     result = { dryRun: false, url: pr.html_url, branch: branchName, title, body };
   } else {
     result = { dryRun: true, branch: branchName, title, body };

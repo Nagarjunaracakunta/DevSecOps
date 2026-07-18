@@ -64,13 +64,23 @@ posted, checking back out to `main` afterward.
 
 ### Opening real GitHub PRs
 
-Set these before starting the backend to have the bot push and open a real PR
-instead of a dry run:
+The bot needs a **dedicated, empty repo** to manage — not this app's own repo.
+It force-syncs its local `watched-repo/` clone to that repo's `main` and
+force-pushes `fix/*` branches to it, so pointing it at a repo with unrelated
+history would get overwritten.
 
-```bash
-export GITHUB_TOKEN=ghp_xxx      # needs repo scope
-export GITHUB_REPO=owner/repo    # a repo you can push fix/* branches to
-```
+1. Create a new empty repo on GitHub (no README/license), e.g.
+   `your-username/devsecops-copilot-demo-target`.
+2. Create a [fine-grained PAT](https://github.com/settings/tokens) scoped to
+   just that repo, with **Contents: Read/write** and **Pull requests:
+   Read/write** permissions.
+3. Set these before starting the backend:
+   ```bash
+   export GITHUB_TOKEN=github_pat_xxx
+   export GITHUB_REPO=your-username/devsecops-copilot-demo-target
+   ```
+4. First "Auto-fix & open PR" click will seed that repo's `main` with the 3
+   demo files automatically, then open the PR against it.
 
 ### Using the Jira MCP server standalone
 
