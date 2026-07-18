@@ -51,7 +51,8 @@ async function jiraFetch(pathAndQuery) {
 
 export async function listTickets() {
   const jql = `project = "${process.env.JIRA_PROJECT_KEY}" ORDER BY created DESC`;
-  const data = await jiraFetch(`/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=25&fields=summary,status,priority`);
+  // /rest/api/3/search was removed by Atlassian in favor of /search/jql.
+  const data = await jiraFetch(`/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=25&fields=summary,status,priority`);
   return data.issues.map((issue) => ({
     key: issue.key,
     summary: issue.fields.summary,
