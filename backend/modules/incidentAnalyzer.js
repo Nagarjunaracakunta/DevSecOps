@@ -19,14 +19,17 @@ async function loadIncidents() {
 
 export async function scanForIncidents() {
   const incidents = await loadIncidents();
-  return Promise.all(
-    incidents.map(async (incident) => {
-      const ticket = await draftTicket(incident);
-      const draft = { incident, ticket };
-      draftCache.set(incident.id, draft);
-      return draft;
-    })
-  );
+  // Sequential, not Promise.all — free-tier LLM keys have low per-minute
+  // request limits, and firing every incident's draft call at once is an
+  // easy way to burst past that even well under the daily quota.
+  const drafts = [];
+  for (const incident of incidents) {
+    const ticket = await draftTicket(incident);
+    const draft = { incident, ticket };
+    draftCache.set(incident.id, draft);
+    drafts.push(draft);
+  }
+  return drafts;
 }
 
 export function getDraft(incidentId) {

@@ -33,7 +33,14 @@ ${incident.sample}
 Draft a concise one-line Jira ticket summary, a description (2-4 sentences explaining likely impact and root cause for an engineer who hasn't seen the raw logs), and a priority (Highest/High/Medium/Low) based on severity and occurrence count.`;
 }
 
-async function draftTicketWithGemini(incident) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Free-tier Gemini keys have low per-minute request limits, so a burst of
+// calls (e.g. scanning several incidents back to back) can hit a 429 even
+// well under the daily quota. Retry with backoff before giving up.
+async function draftTicketWithGemini(incident, attempt = 1) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {
     method: "POST",
@@ -46,6 +53,12 @@ async function draftTicketWithGemini(incident) {
       },
     }),
   });
+
+  if (res.status === 429 && attempt < 3) {
+    const retryAfterSec = Number(res.headers.get("retry-after")) || attempt * 3;
+    await sleep(retryAfterSec * 1000);
+    return draftTicketWithGemini(incident, attempt + 1);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`Gemini API ${res.status}: ${body.slice(0, 300)}`);
