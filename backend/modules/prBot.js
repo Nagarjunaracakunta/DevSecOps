@@ -75,9 +75,21 @@ const FIXERS = {
   "sql-string-concat": fixSqlConcat,
 };
 
+// Accepts "owner/repo" but also tolerates a full URL/.git suffix/trailing
+// slash, since it's easy to paste the wrong form into an env var.
+function normalizeGithubRepoSlug(raw) {
+  if (!raw) return null;
+  return raw
+    .trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/\/+$/, "");
+}
+
 function buildRemoteUrl() {
   const token = process.env.GITHUB_TOKEN;
-  const repo = process.env.GITHUB_REPO; // "owner/repo"
+  const repo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
   if (!token || !repo) return null;
   return `https://x-access-token:${token}@github.com/${repo}.git`;
 }
@@ -189,7 +201,7 @@ export async function createFixPr(ticketKey) {
   const body = buildPrBody(ticket, logs, ruleId);
 
   const githubToken = process.env.GITHUB_TOKEN;
-  const githubRepo = process.env.GITHUB_REPO; // "owner/repo"
+  const githubRepo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
 
   let result;
   if (githubToken && githubRepo) {
