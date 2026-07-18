@@ -1,7 +1,7 @@
 // Thin wrapper around Jira Cloud's REST API v3 (Basic Auth via email + API
 // token). Only used when JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN/
 // JIRA_PROJECT_KEY are all set; otherwise the server falls back to mock data.
-import { adfToText } from "./adf.js";
+import { adfToText, textToAdf } from "./adf.js";
 
 const TEXTY_ATTACHMENT = /\.(log|txt|json|stacktrace|out)$/i;
 const MAX_ATTACHMENT_CHARS = 5000;
@@ -80,6 +80,30 @@ export async function getTicket(key) {
       body: adfToText(c.body),
     })),
   };
+}
+
+export async function createTicket({ summary, description, priority }) {
+  const url = `${baseUrl()}/rest/api/3/issue`;
+  const fields = {
+    project: { key: process.env.JIRA_PROJECT_KEY },
+    summary,
+    description: textToAdf(description),
+    issuetype: { name: process.env.JIRA_ISSUE_TYPE || "Task" },
+  };
+  if (priority) fields.priority = { name: priority };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: authHeader(), "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok || !contentType.includes("application/json")) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Jira API create-issue request failed (status ${res.status}): ${body.slice(0, 500)}`);
+  }
+  const data = await res.json();
+  return { key: data.key, url: `${baseUrl()}/browse/${data.key}` };
 }
 
 export async function getLogs(key) {

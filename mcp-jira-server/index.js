@@ -11,7 +11,13 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { isRealJiraConfigured, listTickets as jiraListTickets, getTicket as jiraGetTicket, getLogs as jiraGetLogs } from "./jiraClient.js";
+import {
+  isRealJiraConfigured,
+  listTickets as jiraListTickets,
+  getTicket as jiraGetTicket,
+  getLogs as jiraGetLogs,
+  createTicket as jiraCreateTicket,
+} from "./jiraClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TICKETS_PATH = path.join(__dirname, "data", "tickets.json");
@@ -80,6 +86,38 @@ server.tool(
       return { content: [{ type: "text", text: `No ticket found with key ${key}` }], isError: true };
     }
     return { content: [{ type: "text", text: JSON.stringify(ticket.logs, null, 2) }] };
+  }
+);
+
+let mockCreatedCount = 0;
+
+server.tool(
+  "create_ticket",
+  "Create a new Jira ticket with the given summary, description, and priority",
+  {
+    summary: z.string(),
+    description: z.string(),
+    priority: z.string().optional().describe("e.g. Highest, High, Medium, Low"),
+  },
+  async ({ summary, description, priority }) => {
+    if (isRealJiraConfigured()) {
+      try {
+        const result = await jiraCreateTicket({ summary, description, priority });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: err.message }], isError: true };
+      }
+    }
+    mockCreatedCount += 1;
+    const key = `MOCK-${100 + mockCreatedCount}`;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ key, url: `https://mock-jira.example.com/browse/${key}`, mock: true }, null, 2),
+        },
+      ],
+    };
   }
 );
 

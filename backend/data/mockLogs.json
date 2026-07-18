@@ -1,0 +1,56 @@
+[
+  {
+    "id": "inc-payment-gateway-timeout",
+    "source": "elasticsearch",
+    "index": "logs-payment-api-2026.07",
+    "service": "payment-api",
+    "level": "ERROR",
+    "errorCode": "GATEWAY_TIMEOUT",
+    "message": "Upstream payment gateway did not respond within 5000ms",
+    "occurrences": 47,
+    "firstSeen": "2026-07-19T02:14:03.000Z",
+    "lastSeen": "2026-07-19T03:02:41.000Z",
+    "sample": "2026-07-19T03:02:41.118Z [ERROR] payment-api: GatewayTimeoutError: upstream did not respond within 5000ms\n    at PaymentGatewayClient.charge (payment-api/src/gatewayClient.js:88:15)\n    at async ChargeController.handle (payment-api/src/chargeController.js:34:9)"
+  },
+  {
+    "id": "inc-auth-db-pool-exhausted",
+    "source": "splunk",
+    "index": "main",
+    "sourcetype": "auth-service:app",
+    "service": "auth-service",
+    "level": "CRITICAL",
+    "errorCode": "DB_POOL_EXHAUSTED",
+    "message": "Connection pool exhausted: 0 available connections, 200 waiting",
+    "occurrences": 12,
+    "firstSeen": "2026-07-19T02:55:10.000Z",
+    "lastSeen": "2026-07-19T03:01:22.000Z",
+    "sample": "2026-07-19T03:01:22.900Z [CRITICAL] auth-service: PoolExhaustedError: connection pool exhausted (max=50, waiting=200)\n    at ConnectionPool.acquire (auth-service/src/db/pool.js:61:13)\n    at async SessionStore.validate (auth-service/src/sessionStore.js:22:24)"
+  },
+  {
+    "id": "inc-notification-worker-crash",
+    "source": "elasticsearch",
+    "index": "logs-notification-worker-2026.07",
+    "service": "notification-worker",
+    "level": "ERROR",
+    "errorCode": "UNHANDLED_EXCEPTION",
+    "message": "TypeError: Cannot read properties of undefined (reading 'id')",
+    "occurrences": 156,
+    "firstSeen": "2026-07-18T22:10:00.000Z",
+    "lastSeen": "2026-07-19T03:00:05.000Z",
+    "sample": "2026-07-19T03:00:05.442Z [ERROR] notification-worker: TypeError: Cannot read properties of undefined (reading 'id')\n    at NotificationWorker.process (notification-worker/src/worker.js:47:32)\n    at Queue.drain (notification-worker/src/queue.js:19:11)"
+  },
+  {
+    "id": "inc-storage-disk-warning",
+    "source": "splunk",
+    "index": "main",
+    "sourcetype": "file-storage-service:app",
+    "service": "file-storage-service",
+    "level": "WARN",
+    "errorCode": "DISK_SPACE_LOW",
+    "message": "Available disk space below 10% threshold on /data volume",
+    "occurrences": 8,
+    "firstSeen": "2026-07-19T01:00:00.000Z",
+    "lastSeen": "2026-07-19T03:00:00.000Z",
+    "sample": "2026-07-19T03:00:00.000Z [WARN] file-storage-service: disk usage at 91.4% on /data (threshold 90%)"
+  }
+]

@@ -353,6 +353,7 @@
   letter-spacing: 0.03em;
 }
 
+.badge-highest { background: var(--sev-critical-bg); color: var(--sev-critical); }
 .badge-critical { background: var(--sev-critical-bg); color: var(--sev-critical); }
 .badge-high { background: var(--sev-high-bg); color: var(--sev-high); }
 .badge-medium { background: var(--sev-medium-bg); color: var(--sev-medium); }
@@ -656,6 +657,175 @@
   display: inline-flex;
   color: var(--accent-strong);
   margin-left: auto;
+}
+
+/* ---------- log incidents ---------- */
+
+.panel-incidents {
+  margin-top: 16px;
+  max-height: none;
+}
+
+.scan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+.scan-button:hover:not(:disabled) { background: var(--accent-strong); }
+.scan-button:disabled { opacity: 0.65; cursor: default; }
+
+.incident-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.incident-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  animation: fade-in 0.25s ease-out;
+}
+.incident-card.sev-highest, .incident-card.sev-critical { border-left-color: var(--sev-critical); }
+.incident-card.sev-high { border-left-color: var(--sev-high); }
+.incident-card.sev-medium { border-left-color: var(--sev-medium); }
+.incident-card.sev-low { border-left-color: var(--sev-low); }
+
+.incident-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.incident-service {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+.incident-source {
+  margin-left: auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.incident-error-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-strong);
+  margin-bottom: 4px;
+}
+
+.incident-message {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.incident-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+
+.incident-draft {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-bottom: 10px;
+}
+
+.incident-draft-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.incident-draft-summary {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.incident-draft-description {
+  background: #0a0c11;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.incident-llm-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sev-medium);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.incident-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.incident-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
+.incident-button:disabled { opacity: 0.65; cursor: default; }
+
+.incident-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sev-low);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.incident-result a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-strong);
+  margin-left: 6px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.incident-result a:hover { text-decoration: underline; }
+
+.incident-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sev-critical);
+  font-size: 12px;
+  margin-top: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {

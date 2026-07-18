@@ -22,3 +22,21 @@ export function adfToText(doc) {
     .join("\n")
     .trim();
 }
+
+// Plain text -> minimal ADF doc, for creating issues (API v3 requires ADF,
+// not a plain string). Blank-line-separated blocks become paragraphs; single
+// newlines within a block become hardBreaks.
+export function textToAdf(text) {
+  const paragraphs = (text || "").split(/\n{2,}/).filter((p) => p.trim().length > 0);
+  const blocks = paragraphs.length ? paragraphs : [""];
+  return {
+    type: "doc",
+    version: 1,
+    content: blocks.map((para) => ({
+      type: "paragraph",
+      content: para
+        .split("\n")
+        .flatMap((line, i, arr) => (i < arr.length - 1 ? [{ type: "text", text: line }, { type: "hardBreak" }] : [{ type: "text", text: line }])),
+    })),
+  };
+}

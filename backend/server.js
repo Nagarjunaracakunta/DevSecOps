@@ -6,8 +6,9 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 
 import { startWatching } from "./modules/codeAnalyzer.js";
-import { listTickets, getTicket, getLogs } from "./modules/mcpJiraClient.js";
+import { listTickets, getTicket, getLogs, createTicket } from "./modules/mcpJiraClient.js";
 import { createFixPr } from "./modules/prBot.js";
+import { scanForIncidents, getDraft } from "./modules/incidentAnalyzer.js";
 
 function normalizeOrigin(raw) {
   if (!raw || raw === "*") return "*";
@@ -57,6 +58,31 @@ app.post("/api/tickets/:key/create-pr", async (req, res) => {
     const result = await createFixPr(req.params.key);
     io.emit("pr:created", result);
     res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/incidents/scan", async (_req, res) => {
+  try {
+    const drafts = await scanForIncidents();
+    res.json(drafts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/incidents/:id/create-ticket", async (req, res) => {
+  const draft = getDraft(req.params.id);
+  if (!draft) {
+    res.status(404).json({ error: `No scanned incident found with id ${req.params.id}. Run a scan first.` });
+    return;
+  }
+  try {
+    const result = await createTicket(draft.ticket);
+    const payload = { incidentId: req.params.id, incident: draft.incident, ticket: draft.ticket, ...result };
+    io.emit("incident:ticket-created", payload);
+    res.json(payload);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

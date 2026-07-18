@@ -1,13 +1,14 @@
 # DevSecOps Copilot
 
 Built for the Namaste Dev hackathon (Akshay Saini). An AI-style DevSecOps
-pipeline that ties together three pieces:
+pipeline that ties together four pieces:
 
 1. **Jira MCP server** (`mcp-jira-server/`) — a standalone [MCP](https://modelcontextprotocol.io)
-   server exposing mock Jira tickets (description, comment/activity history,
-   and attached error logs/stack traces) via three tools: `list_tickets`,
-   `get_ticket`, `get_logs`. No real Jira account needed — it reads from
-   `mcp-jira-server/data/tickets.json`. It's a real MCP server, so it can also
+   server exposing Jira tickets via `list_tickets`, `get_ticket`, `get_logs`,
+   and `create_ticket`. Uses **real Jira Cloud** (REST API v3) when
+   `JIRA_BASE_URL`/`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY` are all
+   set; otherwise falls back to mock data (`mcp-jira-server/data/tickets.json`)
+   so the demo runs with zero config. It's a real MCP server, so it can also
    be plugged into Claude Code/Desktop directly.
 2. **Real-time source code analyzer** (`backend/modules/codeAnalyzer.js`) —
    watches `backend/watched-repo/` with `chokidar` and flags issues (hardcoded
@@ -18,17 +19,25 @@ pipeline that ties together three pieces:
    fix, commits it on a `fix/<ticket-key>` branch via `simple-git`, and opens
    a GitHub PR via Octokit — or, with no `GITHUB_TOKEN`/`GITHUB_REPO`
    configured, returns a dry-run preview of the branch/diff/PR body instead.
+4. **Log-incident-to-Jira-ticket pipeline** (`backend/modules/incidentAnalyzer.js`,
+   `backend/modules/geminiClient.js`) — scans error logs (mock Splunk/
+   Elasticsearch-style data by default), drafts a Jira ticket (summary,
+   description, priority) per incident using Google Gemini when
+   `GEMINI_API_KEY` is set (otherwise a deterministic rule-based draft), shows
+   you the draft to review, and creates the ticket via the Jira MCP server's
+   `create_ticket` tool once you confirm.
 
-The Express + Socket.IO backend (`backend/server.js`) wires all three
+The Express + Socket.IO backend (`backend/server.js`) wires all four
 together and streams live updates to a React/Vite dashboard.
 
 ## Project layout
 
 ```
-mcp-jira-server/   standalone MCP server (mock Jira data)
-backend/           Express + Socket.IO API, code analyzer, PR bot
+mcp-jira-server/   standalone MCP server (real Jira Cloud or mock data)
+backend/           Express + Socket.IO API, code analyzer, PR bot, incident pipeline
   watched-repo/    demo files with intentional vulnerabilities to scan/fix
-frontend/          React/Vite dashboard (3 panels: tickets, code findings, PR activity)
+  data/            mock log/incident data for the incident pipeline
+frontend/          React/Vite dashboard (tickets, code findings, PR activity, log incidents)
 ```
 
 ## Running locally
@@ -55,6 +64,9 @@ Open http://localhost:5173. You should see:
 - **Live Code Findings** (right, top) — updates in real time if you edit any
   file in `backend/watched-repo/`
 - **PR Activity** (right, bottom) — appends every PR the bot opens
+- **Log Incidents** (bottom, full width) — click **"Scan for incidents"** to
+  see mock error-log incidents with an LLM-drafted (or rule-based) ticket
+  preview, then **"Create Jira ticket"** to confirm and create it
 
 Click a ticket, then **Auto-fix & open PR**. Without GitHub credentials
 configured this runs in dry-run mode: it still creates the `fix/<ticket-key>`
@@ -82,6 +94,35 @@ history would get overwritten.
 4. First "Auto-fix & open PR" click will seed that repo's `main` with the 3
    demo files automatically, then open the PR against it.
 
+### Using real Jira Cloud instead of mock tickets
+
+Set all four before starting the backend:
+```bash
+export JIRA_BASE_URL=https://yourcompany.atlassian.net   # site root only, no path/query
+export JIRA_EMAIL=you@yourcompany.com
+export JIRA_API_TOKEN=...   # id.atlassian.com/manage-profile/security/api-tokens
+export JIRA_PROJECT_KEY=SEC # your project's key, not necessarily "SEC"
+```
+`list_tickets`/`get_ticket`/`get_logs`/`create_ticket` all switch to hitting
+the real API. Since attachments aren't always practical to seed via
+automation, `get_logs`/the PR bot's file-correlation also fall back to
+scanning the ticket **description** for one of the known demo filenames
+(`paymentService.js`, `templateRenderer.js`, `userSearch.js`) if no attached
+log file is found.
+
+### Log-incident-to-Jira-ticket pipeline
+
+Works with zero config (deterministic rule-based ticket drafts from the mock
+log data in `backend/data/mockLogs.json`). To have Gemini draft the
+summary/description/priority instead:
+```bash
+export GEMINI_API_KEY=...   # aistudio.google.com — free tier, no card required
+```
+Click **"Scan for incidents"** in the dashboard, review each drafted ticket,
+then **"Create Jira ticket"** — this calls the same Jira MCP server (real or
+mock, per the config above), so tickets created here show up in your real
+Jira project if one is configured.
+
 ### Using the Jira MCP server standalone
 
 It's a normal stdio MCP server, so it can be added to any MCP client, e.g.
@@ -102,3 +143,6 @@ claude mcp add jira-mock -- node /path/to/mcp-jira-server/index.js
    references the ticket and cites the log evidence.
 4. Edit `backend/watched-repo/paymentService.js` live to show the findings
    panel update in real time via the socket connection.
+5. Scroll to **Log Incidents**, click **Scan for incidents** — show the
+   LLM-drafted ticket preview for a production error-log incident, then
+   **Create Jira ticket** to show it land in Jira for reference/triage.

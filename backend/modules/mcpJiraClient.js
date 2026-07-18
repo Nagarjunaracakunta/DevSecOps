@@ -55,3 +55,9 @@ export async function getLogs(key) {
   const result = await client.callTool({ name: "get_logs", arguments: { key } });
   return textFromResult(result);
 }
+
+export async function createTicket({ summary, description, priority }) {
+  const client = await connect();
+  const result = await client.callTool({ name: "create_ticket", arguments: { summary, description, priority } });
+  return textFromResult(result);
+}

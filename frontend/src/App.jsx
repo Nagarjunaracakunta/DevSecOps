@@ -81,6 +81,14 @@ function SpinnerIcon(props) {
     </svg>
   );
 }
+function SearchIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function StatusPill({ status }) {
   const copy = { connected: "Live", connecting: "Connecting…", disconnected: "Offline" }[status];
@@ -293,6 +301,87 @@ function PrActivityPanel({ activity }) {
   );
 }
 
+function IncidentCard({ draft, onCreateTicket, creating, result, error }) {
+  const { incident, ticket } = draft;
+  const sev = (ticket.priority || "medium").toLowerCase();
+  return (
+    <div className={`incident-card sev-${sev}`}>
+      <div className="incident-card-top">
+        <span className="incident-service">{incident.service}</span>
+        {severityBadge(sev)}
+        <span className="incident-source">{incident.source}</span>
+      </div>
+      <div className="incident-error-code">{incident.errorCode}</div>
+      <div className="incident-message">{incident.message}</div>
+      <div className="incident-meta">
+        {incident.occurrences} occurrences · first seen {new Date(incident.firstSeen).toLocaleString()}
+      </div>
+
+      <div className="incident-draft">
+        <div className="incident-draft-label">
+          LLM-drafted ticket {ticket.draftedBy === "gemini" ? "(Gemini)" : "(rule-based fallback)"}
+        </div>
+        <div className="incident-draft-summary">{ticket.summary}</div>
+        <pre className="incident-draft-description">{ticket.description}</pre>
+        {ticket.llmError && (
+          <div className="incident-llm-error">
+            <AlertIcon /> Gemini call failed, used fallback draft: {ticket.llmError}
+          </div>
+        )}
+      </div>
+
+      {result ? (
+        <div className="incident-result">
+          <CheckIcon /> Created {result.key}
+          {result.url && (
+            <a href={result.url} target="_blank" rel="noreferrer">
+              view <ExternalLinkIcon />
+            </a>
+          )}
+        </div>
+      ) : (
+        <button className="incident-button" onClick={onCreateTicket} disabled={creating}>
+          {creating ? <SpinnerIcon /> : <TicketsIcon />}
+          {creating ? "Creating…" : "Create Jira ticket"}
+        </button>
+      )}
+      {error && (
+        <div className="incident-error">
+          <AlertIcon /> {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IncidentsPanel({ drafts, onScan, scanning, onCreateTicket, creatingId, results, errors }) {
+  return (
+    <div className="panel-body">
+      <button className="scan-button" onClick={onScan} disabled={scanning}>
+        {scanning ? <SpinnerIcon /> : <SearchIcon />}
+        {scanning ? "Scanning…" : "Scan for incidents"}
+      </button>
+      {drafts.length === 0 && !scanning && (
+        <div className="empty-state">
+          <SearchIcon /> No incidents scanned yet — click "Scan for incidents".
+        </div>
+      )}
+      <div className="incident-list">
+        {drafts.map((draft) => (
+          <IncidentCard
+            key={draft.incident.id}
+            draft={draft}
+            onCreateTicket={() => onCreateTicket(draft.incident.id)}
+            creating={creatingId === draft.incident.id}
+            result={results[draft.incident.id]}
+            error={errors[draft.incident.id]}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tickets, setTickets] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
@@ -304,6 +393,11 @@ export default function App() {
   const [prErrors, setPrErrors] = useState({});
   const [connectionError, setConnectionError] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [incidents, setIncidents] = useState([]);
+  const [scanningIncidents, setScanningIncidents] = useState(false);
+  const [creatingIncidentId, setCreatingIncidentId] = useState(null);
+  const [incidentResults, setIncidentResults] = useState({});
+  const [incidentErrors, setIncidentErrors] = useState({});
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/api/tickets`)
@@ -338,6 +432,9 @@ export default function App() {
     socket.on("pr:created", (result) => {
       setPrActivity((prev) => [result, ...prev]);
     });
+    socket.on("incident:ticket-created", (payload) => {
+      setIncidentResults((prev) => ({ ...prev, [payload.incidentId]: payload }));
+    });
     return () => socket.disconnect();
   }, []);
 
@@ -364,6 +461,32 @@ export default function App() {
       })
       .catch((err) => setPrErrors((prev) => ({ ...prev, [key]: err.message })))
       .finally(() => setCreatingKey(null));
+  };
+
+  const scanIncidents = () => {
+    setScanningIncidents(true);
+    fetch(`${BACKEND_URL}/api/incidents/scan`, { method: "POST" })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+        if (!Array.isArray(body)) throw new Error("Unexpected response shape from /api/incidents/scan");
+        setIncidents(body);
+      })
+      .catch((err) => setConnectionError(err.message))
+      .finally(() => setScanningIncidents(false));
+  };
+
+  const createIncidentTicket = (incidentId) => {
+    setCreatingIncidentId(incidentId);
+    setIncidentErrors((prev) => ({ ...prev, [incidentId]: null }));
+    fetch(`${BACKEND_URL}/api/incidents/${incidentId}/create-ticket`, { method: "POST" })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error || "Failed to create ticket");
+        setIncidentResults((prev) => ({ ...prev, [incidentId]: body }));
+      })
+      .catch((err) => setIncidentErrors((prev) => ({ ...prev, [incidentId]: err.message })))
+      .finally(() => setCreatingIncidentId(null));
   };
 
   const findingsSummary = useMemo(() => {
@@ -452,6 +575,22 @@ export default function App() {
           <PrActivityPanel activity={prActivity} />
         </section>
       </main>
+
+      <section className="panel panel-incidents">
+        <h2>
+          <SearchIcon /> Log Incidents <span className="panel-hint">Splunk/Elasticsearch → LLM → Jira</span>
+          {incidents.length > 0 && <span className="panel-count">{incidents.length}</span>}
+        </h2>
+        <IncidentsPanel
+          drafts={incidents}
+          onScan={scanIncidents}
+          scanning={scanningIncidents}
+          onCreateTicket={createIncidentTicket}
+          creatingId={creatingIncidentId}
+          results={incidentResults}
+          errors={incidentErrors}
+        />
+      </section>
     </div>
   );
 }
