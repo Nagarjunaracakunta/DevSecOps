@@ -18,8 +18,17 @@ function authHeader() {
   return `Basic ${token}`;
 }
 
+// Tolerates a full URL pasted with a path/query/fragment still attached
+// (e.g. copied from the browser address bar after logging in, complete with
+// "?continue=...&atlOrigin=...") by keeping only the origin — otherwise that
+// query string silently swallows the API path appended onto it, and Jira
+// just serves back the human-facing login/welcome page instead of an error.
 function baseUrl() {
-  return process.env.JIRA_BASE_URL.replace(/\/+$/, "");
+  try {
+    return new URL(process.env.JIRA_BASE_URL).origin;
+  } catch {
+    return process.env.JIRA_BASE_URL.replace(/\/+$/, "");
+  }
 }
 
 async function jiraFetch(pathAndQuery) {
