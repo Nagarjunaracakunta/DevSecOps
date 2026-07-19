@@ -908,6 +908,13 @@
 .summary-grid small, .summary-grid strong { display: block; }
 .summary-grid small { color: var(--text-faint); margin-bottom: 5px; text-transform: uppercase; font-size: 9px; letter-spacing: .08em; }
 .summary-grid strong { font-size: 12px; overflow-wrap: anywhere; }
+.evidence-notice {
+  border-left: 3px solid var(--sev-medium);
+  padding: 9px 12px;
+  background: rgba(255, 209, 102, .06);
+  color: #e6d59e !important;
+  font-size: 12px;
+}
 .run-timeline { display: grid; grid-template-columns: repeat(9, 1fr); list-style: none; margin: 22px 0 0; padding: 0; }
 .run-timeline li { position: relative; color: var(--text-faint); min-width: 0; }
 .run-timeline li::before { content: ""; position: absolute; height: 2px; background: var(--border); left: 30px; right: 0; top: 13px; }

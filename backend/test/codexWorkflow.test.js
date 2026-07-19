@@ -9,7 +9,7 @@ import { COMMANDS, isAllowedCommand, runVerification } from "../modules/verifica
 import { createWorkspace, cleanupWorkspace, assertInsideWorkspace } from "../modules/workspaceManager.js";
 import { generateRegressionTest, generatePatch } from "../modules/codexRepairAgent.js";
 import { buildPullRequestBody, publishVerifiedRun } from "../modules/githubPublisher.js";
-import { buildRunEvent } from "../modules/codexWorker.js";
+import { buildRunEvent, collectSec103Evidence } from "../modules/codexWorker.js";
 
 test("evidence normalization combines fields and redacts secrets", () => {
   const evidence = normalizeEvidence({
@@ -95,4 +95,28 @@ test("Socket.IO event payload exposes evidence, not workspace internals", () => 
   const event = buildRunEvent({ id: "run-1", status: "verifying", workspace: "/private/path" }, "Tests complete", { exitCode: 0 });
   assert.deepEqual(Object.keys(event).sort(), ["evidence", "message", "runId", "stage", "timestamp"].sort());
   assert.equal(JSON.stringify(event).includes("/private/path"), false);
+});
+
+test("SEC-103 workflow falls back to bundled evidence when configured Jira lacks the issue", async () => {
+  const fallback = {
+    ticket: { key: "SEC-103", summary: "Bundled SQL injection incident" },
+    logs: { source: "fixture", raw: "malicious query" }
+  };
+  const collected = await collectSec103Evidence({
+    getTicketFn: async () => { throw new Error("Jira issue does not exist"); },
+    getLogsFn: async () => { throw new Error("Jira issue does not exist"); },
+    getBundledDemoEvidenceFn: async () => fallback
+  });
+  assert.equal(collected.ticket.key, "SEC-103");
+  assert.equal(collected.source.type, "bundled-demo");
+  assert.match(collected.source.reason, /does not exist/);
+});
+
+test("SEC-103 workflow keeps configured Jira evidence when available", async () => {
+  const collected = await collectSec103Evidence({
+    getTicketFn: async () => ({ key: "SEC-103" }),
+    getLogsFn: async () => ({ source: "jira attachment" })
+  });
+  assert.equal(collected.source.type, "jira");
+  assert.equal(collected.logs.source, "jira attachment");
 });

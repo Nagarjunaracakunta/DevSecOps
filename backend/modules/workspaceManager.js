@@ -31,7 +31,23 @@ export async function createWorkspace(runId, scenario = SEC_103) {
   await fs.mkdir(ROOT, { recursive: true, mode: 0o700 });
   const runRoot = await fs.mkdtemp(path.join(ROOT, `${runId.slice(0, 8)}-`));
   const workspace = path.join(runRoot, "repository");
-  await execFile("git", ["clone", "--no-hardlinks", "--branch", scenario.baseBranch, "--single-branch", source, workspace], runRoot);
+  const localSource = !/^https?:\/\//i.test(source) && !/^git@/i.test(source);
+  const hasLocalGit = localSource
+    ? await fs.stat(path.join(source, ".git")).then(() => true).catch(() => false)
+    : false;
+  if (localSource && !hasLocalGit) {
+    await fs.cp(source, workspace, {
+      recursive: true,
+      filter: (candidate) => !candidate.split(path.sep).includes("node_modules")
+    });
+    await execFile("git", ["init", "-b", scenario.baseBranch], workspace);
+    await execFile("git", ["config", "user.email", "devsecops-demo@example.com"], workspace);
+    await execFile("git", ["config", "user.name", "DevSecOps Demo"], workspace);
+    await execFile("git", ["add", "."], workspace);
+    await execFile("git", ["commit", "-m", "chore: materialize bundled vulnerable target"], workspace);
+  } else {
+    await execFile("git", ["clone", "--no-hardlinks", "--branch", scenario.baseBranch, "--single-branch", source, workspace], runRoot);
+  }
   const baseCommitSha = await execFile("git", ["rev-parse", "HEAD"], workspace);
   return { runRoot, workspace, baseCommitSha, source };
 }

@@ -17,8 +17,9 @@ export function redact(value) {
   return value;
 }
 
-export function normalizeEvidence({ ticket, logs = {}, findings = [], scenario }) {
+export function normalizeEvidence({ ticket, logs = {}, findings = [], scenario, source = { type: "jira" } }) {
   return redact({
+    source,
     ticket: {
       key: ticket.key,
       summary: ticket.summary,

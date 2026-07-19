@@ -140,9 +140,11 @@ function IncidentToFix() {
             <div className="summary-grid">
               <div><small>Ticket</small><strong>{run.ticketKey}</strong></div>
               <div><small>Scenario</small><strong>SQL injection</strong></div>
+              <div><small>Evidence source</small><strong>{run.evidence?.source?.type === "bundled-demo" ? "Bundled SEC-103 demo" : "Configured Jira"}</strong></div>
               <div><small>Execution</small><strong>{run.codexMode === "live-codex" ? "OpenAI Codex live" : "Saved demonstration result"}</strong></div>
               <div><small>Base commit</small><strong>{run.baseCommitSha?.slice(0, 10) || "pending"}</strong></div>
             </div>
+            {run.evidence?.source?.type === "bundled-demo" && <p className="evidence-notice">Configured Jira did not provide SEC-103, so this run uses the clearly labeled bundled demonstration evidence.</p>}
             {run.evidence?.logs?.raw && <pre>{run.evidence.logs.raw}</pre>}
           </section>
 

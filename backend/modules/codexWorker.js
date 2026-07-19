@@ -1,4 +1,4 @@
-import { getTicket, getLogs } from "./mcpJiraClient.js";
+import { getTicket, getLogs, getBundledDemoEvidence } from "./mcpJiraClient.js";
 import { normalizeEvidence } from "./evidenceNormalizer.js";
 import { createWorkspace, cleanupWorkspace } from "./workspaceManager.js";
 import { runVerification } from "./verificationRunner.js";
@@ -53,14 +53,53 @@ export function publicRun(run) {
   return safeRun(run);
 }
 
+export async function collectSec103Evidence({
+  getTicketFn = getTicket,
+  getLogsFn = getLogs,
+  getBundledDemoEvidenceFn = getBundledDemoEvidence
+} = {}) {
+  try {
+    const [ticket, logs] = await Promise.all([
+      getTicketFn(SEC_103.ticketKey),
+      getLogsFn(SEC_103.ticketKey)
+    ]);
+    return {
+      ticket,
+      logs,
+      source: { type: "jira", mode: "configured-provider" }
+    };
+  } catch (error) {
+    const bundled = await getBundledDemoEvidenceFn(SEC_103.ticketKey);
+    return {
+      ...bundled,
+      source: {
+        type: "bundled-demo",
+        mode: "SEC-103 fallback",
+        reason: error.message
+      }
+    };
+  }
+}
+
 export async function executeRun(runId, io) {
   let workspaceInfo;
   try {
     let run = transition(io, runId, "collecting_evidence", {}, "Collecting Jira, log, and scanner evidence");
-    const [ticket, logs] = await Promise.all([getTicket(SEC_103.ticketKey), getLogs(SEC_103.ticketKey)]);
-    const evidence = normalizeEvidence({ ticket, logs, findings: [SEC_103.finding], scenario: SEC_103 });
+    const collected = await collectSec103Evidence();
+    const evidence = normalizeEvidence({
+      ...collected,
+      findings: [SEC_103.finding],
+      scenario: SEC_103
+    });
     run = runStore.update(runId, { evidence });
-    emit(io, "codex:evidence-collected", run, "SEC-103 evidence normalized and secrets redacted", { ticket: evidence.ticket, relevantLog: evidence.logs.raw });
+    const sourceMessage = evidence.source.type === "bundled-demo"
+      ? "SEC-103 was unavailable in configured Jira; using the bundled demo evidence"
+      : "SEC-103 evidence collected from configured Jira";
+    emit(io, "codex:evidence-collected", run, `${sourceMessage} and secrets redacted`, {
+      source: evidence.source,
+      ticket: evidence.ticket,
+      relevantLog: evidence.logs.raw
+    });
 
     run = transition(io, runId, "creating_workspace", {}, "Creating an isolated repository clone");
     workspaceInfo = await createWorkspace(runId, SEC_103);
