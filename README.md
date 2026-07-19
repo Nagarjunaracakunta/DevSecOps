@@ -1,4 +1,4 @@
-# DevSecOps Copilot
+# DevSecOps  Copilot
 
 DevSecOps Copilot uses OpenAI Codex to connect production incidents, Jira
 evidence, and source code, then generates a regression test, creates a minimal
