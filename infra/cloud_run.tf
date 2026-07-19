@@ -134,7 +134,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       resources {
         limits = {
-          cpu    = "1"
+          cpu = "1"
           # Cloud Run requires >=512Mi when CPU isn't explicitly throttled
           # to request-only (cpu_idle) — 256Mi was rejected at apply time.
           memory = "512Mi"
