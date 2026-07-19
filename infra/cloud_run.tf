@@ -7,9 +7,10 @@ locals {
 }
 
 resource "google_cloud_run_v2_service" "backend" {
-  name     = var.backend_service_name
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = var.backend_service_name
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false # this is a hackathon demo — `terraform destroy` should actually tear it down
 
   template {
     service_account = google_service_account.cloud_run_runtime.email
@@ -113,9 +114,10 @@ resource "google_cloud_run_v2_service_iam_member" "backend_public" {
 }
 
 resource "google_cloud_run_v2_service" "frontend" {
-  name     = var.frontend_service_name
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = var.frontend_service_name
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     scaling {
@@ -133,7 +135,9 @@ resource "google_cloud_run_v2_service" "frontend" {
       resources {
         limits = {
           cpu    = "1"
-          memory = "256Mi"
+          # Cloud Run requires >=512Mi when CPU isn't explicitly throttled
+          # to request-only (cpu_idle) — 256Mi was rejected at apply time.
+          memory = "512Mi"
         }
       }
     }
