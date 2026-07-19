@@ -36,9 +36,13 @@ together and streams live updates to a React/Vite dashboard.
 ```
 mcp-jira-server/   standalone MCP server (real Jira Cloud or mock data)
 backend/           Express + Socket.IO API, code analyzer, PR bot, incident pipeline
+  Dockerfile       container image (build from repo root — see Deploying below)
   watched-repo/    demo files with intentional vulnerabilities to scan/fix
   data/            mock log/incident data for the incident pipeline
 frontend/          React/Vite dashboard (tickets, code findings, PR activity, log incidents)
+  Dockerfile       multi-stage build — static assets served via `serve`
+infra/             Terraform: Cloud Run, Artifact Registry, Secret Manager, WIF for GCP
+.github/workflows/ GitHub Actions: builds + deploys both images to Cloud Run on push
 ```
 
 ## Running locally
@@ -135,6 +139,85 @@ Claude Code:
 ```bash
 claude mcp add jira-mock -- node /path/to/mcp-jira-server/index.js
 ```
+
+## Deploying to GCP Cloud Run (Terraform + GitHub Actions)
+
+This is the cost-optimized option: Cloud Run scales to zero when idle, so it
+costs nothing between demo sessions, unlike an always-on host.
+
+### One-time setup
+
+1. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install) and
+   run `gcloud auth login` and `gcloud auth application-default login`.
+2. Create (or pick) a GCP project and note its project ID. Make sure billing
+   is linked (required even to use free-tier quota).
+3. ```bash
+   cd infra
+   cp terraform.tfvars.example terraform.tfvars
+   # edit terraform.tfvars: at minimum set project_id and github_repo
+   terraform init
+   terraform plan    # review what it's about to create
+   terraform apply
+   ```
+   This provisions: Artifact Registry, two Cloud Run services (backend +
+   frontend, deployed initially with a placeholder image), Secret Manager
+   secrets (placeholder values), and a Workload Identity Federation setup
+   scoped to your GitHub repo so Actions can deploy without a stored key.
+4. Note the outputs — you'll need `workload_identity_provider` and
+   `deployer_service_account_email` for the next step.
+5. In your GitHub repo → **Settings → Secrets and variables → Actions →
+   Variables** tab, add these repo variables (none of these are secret
+   values, they're just config — plain "Variables", not "Secrets"):
+   | Name | Value |
+   |---|---|
+   | `GCP_PROJECT_ID` | your project ID |
+   | `GCP_REGION` | e.g. `us-central1` |
+   | `GCP_ARTIFACT_REPO` | `devsecops-copilot` (or your `repo_name` var) |
+   | `GCP_BACKEND_SERVICE` | `devsecops-backend` |
+   | `GCP_FRONTEND_SERVICE` | `devsecops-frontend` |
+   | `GCP_WORKLOAD_IDENTITY_PROVIDER` | the `workload_identity_provider` output |
+   | `GCP_DEPLOYER_SA_EMAIL` | the `deployer_service_account_email` output |
+6. Populate the real secret values (these actually are secrets — set via
+   `gcloud`, never through Terraform variables or GitHub Actions logs):
+   ```bash
+   echo -n "github_pat_xxx" | gcloud secrets versions add github-token --data-file=- --project=YOUR_PROJECT_ID
+   echo -n "your-jira-api-token" | gcloud secrets versions add jira-api-token --data-file=- --project=YOUR_PROJECT_ID
+   echo -n "your-groq-key" | gcloud secrets versions add groq-api-key --data-file=- --project=YOUR_PROJECT_ID
+   ```
+7. Push to `main` (or run the workflow manually from the Actions tab) —
+   GitHub Actions builds both images, pushes them to Artifact Registry, and
+   deploys both Cloud Run services.
+
+### After first deploy
+
+Tighten CORS to the real frontend URL instead of `*`: set `cors_origin` in
+`terraform.tfvars` to the `frontend_url` Terraform output, then
+`terraform apply` again (or `gcloud run services update devsecops-backend
+--set-env-vars CORS_ORIGIN=https://your-frontend-url`).
+
+### Cost notes
+
+- Both services scale to **zero** instances when idle (`min_instance_count = 0`)
+  — no compute cost between uses.
+- `max_instance_count = 2` on both caps any runaway scaling cost.
+- Artifact Registry's cleanup policy keeps only the 5 most recent image
+  versions per repo, so storage cost stays flat instead of growing forever.
+- Consider setting a [budget alert](https://cloud.google.com/billing/docs/how-to/budgets)
+  on the project so you get notified well before the $300 credit runs out.
+- When you're done with the hackathon: `cd infra && terraform destroy` tears
+  down every resource this created.
+
+## Alternative: Render + Vercel
+
+Simpler to set up manually (no Terraform/Docker), but Render's free tier
+sleeps after 15 minutes idle and wakes slowly, and doesn't scale to zero the
+way Cloud Run does cost-wise. Push this repo to GitHub, then:
+- **Backend** → Render → New Web Service → Build Command
+  `npm install --prefix backend && npm install --prefix mcp-jira-server`,
+  Start Command `npm --prefix backend start`. Set the same env vars as above
+  in Render's Environment tab.
+- **Frontend** → Vercel → import the repo with Root Directory `frontend`, set
+  `VITE_BACKEND_URL` to the Render URL.
 
 ## Demo script for the hackathon
 

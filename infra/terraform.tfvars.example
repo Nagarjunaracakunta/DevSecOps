@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (gitignored) and fill in your own values.
+
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+github_repo = "your-username/DevSecOps"
+
+# Optional — leave as defaults / blank to run everything in dry-run / mock
+# mode first, then fill these in once you're ready:
+
+# cors_origin      = "*"                                    # tighten to the frontend's Cloud Run URL once known
+# github_demo_repo = "your-username/devsecops-demo-target"   # dedicated empty repo, NOT this app's own repo
+# jira_base_url    = "https://yourcompany.atlassian.net"
+# jira_email       = "you@yourcompany.com"
+# jira_project_key = "SCRUM"
+# jira_issue_type  = "Task"
+# groq_model       = "llama-3.3-70b-versatile"

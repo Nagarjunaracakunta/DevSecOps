@@ -1,0 +1,96 @@
+name: Deploy to GCP Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "mcp-jira-server/**"
+      - ".github/workflows/deploy-gcp.yml"
+  workflow_dispatch: {}
+
+# id-token: write is required for Workload Identity Federation — GitHub
+# mints a short-lived OIDC token for this run instead of using a stored key.
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: ${{ vars.GCP_REGION }}
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+  BACKEND_SERVICE: ${{ vars.GCP_BACKEND_SERVICE }}
+  FRONTEND_SERVICE: ${{ vars.GCP_FRONTEND_SERVICE }}
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_url: ${{ steps.describe.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push backend image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/backend:${{ github.sha }}"
+          docker build -f backend/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy backend to Cloud Run
+        run: |
+          gcloud run deploy "$BACKEND_SERVICE" \
+            --image="$IMAGE" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet
+
+      - id: describe
+        name: Get backend URL
+        run: |
+          URL=$(gcloud run services describe "$BACKEND_SERVICE" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  deploy-frontend:
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push frontend image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/frontend:${{ github.sha }}"
+          docker build -f frontend/Dockerfile \
+            --build-arg VITE_BACKEND_URL="${{ needs.deploy-backend.outputs.backend_url }}" \
+            -t "$IMAGE" ./frontend
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy frontend to Cloud Run
+        run: |
+          gcloud run deploy "$FRONTEND_SERVICE" \
+            --image="$IMAGE" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet
