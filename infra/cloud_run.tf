@@ -120,6 +120,12 @@ resource "google_cloud_run_v2_service" "frontend" {
   deletion_protection = false
 
   template {
+    # Without this, Cloud Run defaults to the project's default Compute
+    # Engine SA, which the GitHub Actions deployer has no actAs permission
+    # on (only granted for this custom runtime SA) — every `gcloud run
+    # deploy` from CI would fail with PERMISSION_DENIED on actAs.
+    service_account = google_service_account.cloud_run_runtime.email
+
     scaling {
       min_instance_count = 0
       max_instance_count = 2
