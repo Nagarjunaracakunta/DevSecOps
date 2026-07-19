@@ -18,6 +18,10 @@ export function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
+export function isGroqConfigured() {
+  return Boolean(process.env.GROQ_API_KEY);
+}
+
 function buildPrompt(incident) {
   return `You are a site-reliability engineer triaging a production incident from log data. Based on the evidence below, draft a Jira ticket.
 
@@ -56,6 +60,30 @@ async function draftTicketWithGemini(incident) {
   return JSON.parse(text);
 }
 
+async function draftTicketWithGroq(incident) {
+  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "Return JSON with summary, description, and priority (Highest, High, Medium, or Low)." },
+        { role: "user", content: buildPrompt(incident) }
+      ]
+    })
+  });
+  if (!res.ok) throw new Error(`Groq API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Groq returned no content");
+  return JSON.parse(text);
+}
+
 function priorityFromLevel(level, occurrences) {
   if (level === "CRITICAL") return "Highest";
   if (level === "ERROR") return occurrences > 100 ? "Highest" : "High";
@@ -81,13 +109,24 @@ function draftTicketDeterministic(incident) {
 }
 
 export async function draftTicket(incident) {
-  if (!isGeminiConfigured()) {
-    return { ...draftTicketDeterministic(incident), draftedBy: "rules" };
+  const errors = [];
+  if (isGroqConfigured()) {
+    try {
+      return { ...(await draftTicketWithGroq(incident)), draftedBy: "groq" };
+    } catch (err) {
+      errors.push(`Groq: ${err.message}`);
+    }
   }
-  try {
-    const draft = await draftTicketWithGemini(incident);
-    return { ...draft, draftedBy: "gemini" };
-  } catch (err) {
-    return { ...draftTicketDeterministic(incident), draftedBy: "rules", llmError: err.message };
+  if (isGeminiConfigured()) {
+    try {
+      return { ...(await draftTicketWithGemini(incident)), draftedBy: "gemini" };
+    } catch (err) {
+      errors.push(`Gemini: ${err.message}`);
+    }
   }
+  return {
+    ...draftTicketDeterministic(incident),
+    draftedBy: "rules",
+    ...(errors.length ? { llmError: errors.join(" | ") } : {})
+  };
 }

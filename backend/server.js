@@ -9,6 +9,11 @@ import { startWatching } from "./modules/codeAnalyzer.js";
 import { listTickets, getTicket, getLogs, createTicket } from "./modules/mcpJiraClient.js";
 import { createFixPr } from "./modules/prBot.js";
 import { scanForIncidents, getDraft } from "./modules/incidentAnalyzer.js";
+import { validateRunRequest, SEC_103 } from "./modules/demoScenarios.js";
+import { runStore } from "./modules/runStore.js";
+import { executeRun, publicRun } from "./modules/codexWorker.js";
+import { publishVerifiedRun } from "./modules/githubPublisher.js";
+import { cleanupWorkspace } from "./modules/workspaceManager.js";
 
 function normalizeOrigin(raw) {
   if (!raw || raw === "*") return "*";
@@ -29,6 +34,15 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: CORS_ORIGIN } });
 
 const latestFindingsByFile = new Map();
+const runCreationByIp = new Map();
+
+function canCreateRun(ip) {
+  const now = Date.now();
+  const recent = (runCreationByIp.get(ip) || []).filter((time) => now - time < 60_000);
+  if (recent.length >= 3) return false;
+  runCreationByIp.set(ip, [...recent, now]);
+  return true;
+}
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
@@ -87,6 +101,98 @@ app.post("/api/incidents/:id/create-ticket", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+app.post("/api/codex/runs", (req, res) => {
+  try {
+    if (!canCreateRun(req.ip)) {
+      res.status(429).json({ error: "Run creation limit reached. Try again in one minute." });
+      return;
+    }
+    const scenario = validateRunRequest(req.body);
+    const run = runStore.create({
+      ticketKey: scenario.ticketKey,
+      scenarioId: scenario.id,
+      repositoryUrl: process.env.CODEX_TARGET_REPOSITORY || scenario.repositoryPath
+    });
+    emitRunStarted(run);
+    res.status(202).json(publicRun(run));
+    setImmediate(() => executeRun(run.id, io));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/codex/runs/:runId", (req, res) => {
+  const run = runStore.get(req.params.runId);
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  res.json(publicRun(run));
+});
+
+app.post("/api/codex/runs/:runId/approve", (req, res) => {
+  const run = runStore.get(req.params.runId);
+  if (!run) return res.status(404).json({ error: "Run not found" });
+  if (run.status !== "awaiting_approval") return res.status(409).json({ error: "Run is not awaiting approval" });
+  res.json(publicRun(runStore.update(run.id, { approved: true, approvedAt: new Date().toISOString() })));
+});
+
+app.post("/api/codex/runs/:runId/reject", async (req, res) => {
+  try {
+    const run = runStore.get(req.params.runId);
+    if (!run) return res.status(404).json({ error: "Run not found" });
+    if (run.status !== "awaiting_approval") return res.status(409).json({ error: "Run is not awaiting approval" });
+    const rejected = runStore.transition(run.id, "rejected", { rejectedAt: new Date().toISOString() });
+    await cleanupWorkspace(run.runRoot);
+    res.json(publicRun(rejected));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/codex/runs/:runId/open-pr", async (req, res) => {
+  try {
+    const existing = runStore.get(req.params.runId);
+    if (!existing) return res.status(404).json({ error: "Run not found" });
+    if (!existing.approved) return res.status(403).json({ error: "Human approval is required" });
+    const publishing = runStore.transition(existing.id, "publishing");
+    const pullRequest = await publishVerifiedRun(publishing);
+    const completed = runStore.transition(existing.id, "completed", {
+      pullRequestUrl: pullRequest.url,
+      pullRequest
+    });
+    io.emit("codex:pr-created", {
+      runId: completed.id,
+      stage: completed.status,
+      message: pullRequest.dryRun ? "Dry-run pull request prepared" : "Pull request created",
+      evidence: pullRequest,
+      timestamp: new Date().toISOString()
+    });
+    await cleanupWorkspace(existing.runRoot);
+    res.json(publicRun(completed));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/codex/runs/:runId", async (req, res) => {
+  const run = runStore.get(req.params.runId);
+  if (!run) return res.status(404).json({ error: "Run not found" });
+  await cleanupWorkspace(run.runRoot).catch(() => {});
+  runStore.delete(run.id);
+  res.status(204).end();
+});
+
+function emitRunStarted(run) {
+  io.emit("codex:run-started", {
+    runId: run.id,
+    stage: run.status,
+    message: `SEC-103 run queued for ${SEC_103.id}`,
+    evidence: { ticketKey: run.ticketKey, scenarioId: run.scenarioId },
+    timestamp: new Date().toISOString()
+  });
+}
 
 io.on("connection", (socket) => {
   socket.emit("code:snapshot", Array.from(latestFindingsByFile.values()));

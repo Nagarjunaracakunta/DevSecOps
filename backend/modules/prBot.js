@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import simpleGit from "simple-git";
 import { Octokit } from "@octokit/rest";
 import { getTicket, getLogs } from "./mcpJiraClient.js";
+import { configuredGithubRepo, resolveGithubToken } from "./githubConfig.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = path.resolve(__dirname, "..", "watched-repo");
@@ -190,9 +191,9 @@ function normalizeGithubRepoSlug(raw) {
     .replace(/\/+$/, "");
 }
 
-function buildRemoteUrl() {
-  const token = process.env.GITHUB_TOKEN;
-  const repo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
+async function buildRemoteUrl() {
+  const token = await resolveGithubToken();
+  const repo = normalizeGithubRepoSlug(configuredGithubRepo());
   if (!token || !repo) return null;
   return `https://x-access-token:${token}@github.com/${repo}.git`;
 }
@@ -260,7 +261,7 @@ async function ensureRepoInitialized() {
     await git.commit("chore: initial import of watched-repo demo files");
   }
 
-  const remoteUrl = buildRemoteUrl();
+  const remoteUrl = await buildRemoteUrl();
   if (remoteUrl) {
     await ensureRemoteConfigured(git, remoteUrl);
     await syncWithRemoteMain(git);
@@ -334,8 +335,8 @@ export async function createFixPr(ticketKey) {
   const title = `[${ticket.key}] ${ticket.summary}`;
   const body = buildPrBody(ticket, logs, ruleId);
 
-  const githubToken = process.env.GITHUB_TOKEN;
-  const githubRepo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
+  const githubToken = await resolveGithubToken();
+  const githubRepo = normalizeGithubRepoSlug(configuredGithubRepo());
 
   let result;
   if (githubToken && githubRepo) {
