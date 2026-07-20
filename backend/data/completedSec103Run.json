@@ -1,0 +1,16 @@
+{
+  "fixture": true,
+  "label": "Saved demonstration result",
+  "ticketKey": "SEC-103",
+  "scenarioId": "sec-103-sql-injection",
+  "status": "completed",
+  "rootCause": "SQL injection through string concatenation in searchUsersByName",
+  "filesChanged": [
+    "src/userSearch.js",
+    "test/sec-103-regression.test.js"
+  ],
+  "beforePatch": "Regression test failed as expected",
+  "afterPatch": "Regression and full test suite passed",
+  "securityReview": "Passed",
+  "pullRequest": "Dry-run preview ready"
+}

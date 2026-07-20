@@ -87,5 +87,97 @@
     },
     "affectedFile": "userSearch.js",
     "affectedLine": 3
+  },
+  {
+    "key": "SEC-104",
+    "summary": "Payment API experiencing timeouts due to unresponsive upstream payment gateway",
+    "status": "Open",
+    "priority": "Highest",
+    "reporter": "log-incident-pipeline",
+    "created": "2026-07-19T03:02:41Z",
+    "description": "The payment API has been generating GatewayTimeoutError since 02:14:03.000Z, indicating that the upstream payment gateway is not responding within the 5000ms timeout window. This issue is likely causing failed payment processing, resulting in a significant impact on user experience and revenue. The root cause appears to be related to the payment gateway's availability or responsiveness.",
+    "comments": [
+      {
+        "author": "log-incident-pipeline",
+        "timestamp": "2026-07-19T03:02:41Z",
+        "body": "Auto-drafted from elasticsearch incident inc-payment-gateway-timeout (47 occurrences)."
+      }
+    ],
+    "logs": {
+      "source": "logs-payment-api-2026.07",
+      "stacktrace": "at PaymentGatewayClient.charge (payment-api/src/gatewayClient.js:88:15)\nat async ChargeController.handle (payment-api/src/chargeController.js:34:9)",
+      "raw": "2026-07-19T03:02:41.118Z [ERROR] payment-api: GatewayTimeoutError: upstream did not respond within 5000ms"
+    },
+    "affectedFile": "payment-api/src/gatewayClient.js",
+    "affectedLine": 2
+  },
+  {
+    "key": "SEC-105",
+    "summary": "DB_POOL_EXHAUSTED: Connection pool exhausted: 0 available connections, 200 waiting (auth-service)",
+    "status": "Open",
+    "priority": "Highest",
+    "reporter": "log-incident-pipeline",
+    "created": "2026-07-19T03:01:22Z",
+    "description": "Detected 12 occurrence(s) of DB_POOL_EXHAUSTED in auth-service between 2026-07-19T02:55:10.000Z and 2026-07-19T03:01:22.000Z.\n\nMessage: Connection pool exhausted: 0 available connections, 200 waiting",
+    "comments": [
+      {
+        "author": "log-incident-pipeline",
+        "timestamp": "2026-07-19T03:01:22Z",
+        "body": "Auto-drafted from splunk incident inc-auth-db-pool-exhausted (12 occurrences)."
+      }
+    ],
+    "logs": {
+      "source": "auth-service:app",
+      "stacktrace": "at ConnectionPool.acquire (auth-service/src/db/pool.js:61:13)\nat async SessionStore.validate (auth-service/src/sessionStore.js:22:24)",
+      "raw": "2026-07-19T03:01:22.900Z [CRITICAL] auth-service: PoolExhaustedError: connection pool exhausted (max=50, waiting=200)"
+    },
+    "affectedFile": "auth-service/src/db/pool.js",
+    "affectedLine": 2
+  },
+  {
+    "key": "SEC-106",
+    "summary": "DISK_SPACE_LOW: Available disk space below 10% threshold on /data volume (file-storage-service)",
+    "status": "Open",
+    "priority": "Medium",
+    "reporter": "log-incident-pipeline",
+    "created": "2026-07-19T03:00:00Z",
+    "description": "Detected 8 occurrence(s) of DISK_SPACE_LOW in file-storage-service between 2026-07-19T01:00:00.000Z and 2026-07-19T03:00:00.000Z.\n\nMessage: Available disk space below 10% threshold on /data volume",
+    "comments": [
+      {
+        "author": "log-incident-pipeline",
+        "timestamp": "2026-07-19T03:00:00Z",
+        "body": "Auto-drafted from splunk incident inc-storage-disk-warning (8 occurrences)."
+      }
+    ],
+    "logs": {
+      "source": "file-storage-service:app",
+      "stacktrace": "",
+      "raw": "2026-07-19T03:00:00.000Z [WARN] file-storage-service: disk usage at 91.4% on /data (threshold 90%)"
+    },
+    "affectedFile": "file-storage-service/src/retentionJob.js",
+    "affectedLine": 5
+  },
+  {
+    "key": "SEC-107",
+    "summary": "UNHANDLED_EXCEPTION: TypeError: Cannot read properties of undefined (reading 'id') (notification-worker)",
+    "status": "Open",
+    "priority": "Highest",
+    "reporter": "log-incident-pipeline",
+    "created": "2026-07-19T03:00:05Z",
+    "description": "Detected 156 occurrence(s) of UNHANDLED_EXCEPTION in notification-worker between 2026-07-18T22:10:00.000Z and 2026-07-19T03:00:05.000Z.\n\nMessage: TypeError: Cannot read properties of undefined (reading 'id')",
+    "comments": [
+      {
+        "author": "log-incident-pipeline",
+        "timestamp": "2026-07-19T03:00:05Z",
+        "body": "Auto-drafted from elasticsearch incident inc-notification-worker-crash (156 occurrences)."
+      }
+    ],
+    "logs": {
+      "source": "logs-notification-worker-2026.07",
+      "stacktrace": "at NotificationWorker.process (notification-worker/src/worker.js:47:32)\nat Queue.drain (notification-worker/src/queue.js:19:11)",
+      "raw": "2026-07-19T03:00:05.442Z [ERROR] notification-worker: TypeError: Cannot read properties of undefined (reading 'id')"
+    },
+    "affectedFile": "notification-worker/src/worker.js",
+    "affectedLine": 4
   }
 ]

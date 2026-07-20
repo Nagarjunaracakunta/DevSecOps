@@ -18,6 +18,10 @@ export function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
+export function isGroqConfigured() {
+  return Boolean(process.env.GROQ_API_KEY);
+}
+
 function buildPrompt(incident) {
   return `You are a site-reliability engineer triaging a production incident from log data. Based on the evidence below, draft a Jira ticket.
 

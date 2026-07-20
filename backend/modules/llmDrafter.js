@@ -31,12 +31,13 @@ function draftTicketDeterministic(incident) {
 }
 
 export async function draftTicket(incident) {
+  const errors = [];
   if (isGroqConfigured()) {
     try {
       const draft = await draftTicketWithGroq(incident);
       return { ...draft, draftedBy: "groq" };
     } catch (err) {
-      return { ...draftTicketDeterministic(incident), draftedBy: "rules", llmError: err.message };
+      errors.push(`Groq: ${err.message}`);
     }
   }
   if (isGeminiConfigured()) {
@@ -44,8 +45,12 @@ export async function draftTicket(incident) {
       const draft = await draftTicketWithGemini(incident);
       return { ...draft, draftedBy: "gemini" };
     } catch (err) {
-      return { ...draftTicketDeterministic(incident), draftedBy: "rules", llmError: err.message };
+      errors.push(`Gemini: ${err.message}`);
     }
   }
-  return { ...draftTicketDeterministic(incident), draftedBy: "rules" };
+  return {
+    ...draftTicketDeterministic(incident),
+    draftedBy: "rules",
+    ...(errors.length ? { llmError: errors.join(" | ") } : {})
+  };
 }

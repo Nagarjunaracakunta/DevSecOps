@@ -1,0 +1,15 @@
+{
+  "name": "devsecops-demo-target",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deliberately vulnerable repair target for DevSecOps Copilot",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint src test",
+    "security": "npm audit --audit-level=high"
+  },
+  "devDependencies": {
+    "eslint": "^9.32.0"
+  }
+}

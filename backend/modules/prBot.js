@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import simpleGit from "simple-git";
 import { Octokit } from "@octokit/rest";
 import { getTicket, getLogs } from "./mcpJiraClient.js";
+import { configuredGithubRepo, resolveGithubToken } from "./githubConfig.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = path.resolve(__dirname, "..", "watched-repo");
@@ -19,6 +20,10 @@ function detectRuleId(ticket) {
   if (text.includes("api key") || text.includes("secret") || text.includes("hardcoded")) return "hardcoded-secret";
   if (text.includes("eval(") || text.includes("rce") || text.includes("code execution")) return "eval-usage";
   if (text.includes("sql injection")) return "sql-string-concat";
+  if (text.includes("timeout") && text.includes("gateway")) return "gateway-timeout";
+  if (text.includes("pool exhausted") || text.includes("connection pool")) return "db-pool-leak";
+  if (text.includes("disk space") || text.includes("disk usage")) return "disk-cleanup";
+  if (text.includes("cannot read propert")) return "null-check";
   return null;
 }
 
@@ -70,23 +75,108 @@ function fixSqlConcat(content) {
     );
 }
 
+function fixGatewayTimeout(content) {
+  return content.replace(
+    `async function chargeViaGateway(gateway, chargeRequest) {
+  const response = await gateway.post("/charge", chargeRequest, { timeoutMs: 5000 });
+  return response;
+}`,
+    `async function chargeViaGateway(gateway, chargeRequest, attempt = 1) {
+  try {
+    return await gateway.post("/charge", chargeRequest, { timeoutMs: 8000 });
+  } catch (err) {
+    if (attempt < 3 && err.code === "ETIMEDOUT") {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+      return chargeViaGateway(gateway, chargeRequest, attempt + 1); // retry with backoff instead of failing on the first timeout
+    }
+    throw err;
+  }
+}`
+  );
+}
+
+function fixDbPoolLeak(content) {
+  return content.replace(
+    `async function withConnection(pool, fn) {
+  const conn = await pool.acquire();
+  return fn(conn);
+}`,
+    `async function withConnection(pool, fn) {
+  const conn = await pool.acquire();
+  try {
+    return await fn(conn);
+  } finally {
+    pool.release(conn); // always release, even on error — fixes the pool exhaustion leak
+  }
+}`
+  );
+}
+
+function fixDiskCleanup(content) {
+  return content.replace(
+    "const oldFiles = files.filter((f) => f.mtimeMs > cutoff);",
+    "const oldFiles = files.filter((f) => f.mtimeMs < cutoff); // fixed: select files OLDER than the retention cutoff, not newer"
+  );
+}
+
+function fixNullCheck(content) {
+  return content.replace(
+    `function process(message) {
+  return handleNotification(message.payload.user.id, message.payload.template);
+}`,
+    `function process(message) {
+  const user = message?.payload?.user;
+  if (!user?.id) {
+    console.warn("Skipping notification: missing user id", { messageId: message?.id });
+    return null;
+  }
+  return handleNotification(user.id, message.payload.template);
+}`
+  );
+}
+
 const FIXERS = {
   "hardcoded-secret": fixHardcodedSecret,
   "eval-usage": fixEvalUsage,
   "sql-string-concat": fixSqlConcat,
+  "gateway-timeout": fixGatewayTimeout,
+  "db-pool-leak": fixDbPoolLeak,
+  "disk-cleanup": fixDiskCleanup,
+  "null-check": fixNullCheck,
 };
 
-const KNOWN_WATCHED_FILES = ["paymentService.js", "templateRenderer.js", "userSearch.js"];
+const KNOWN_WATCHED_FILES = [
+  "paymentService.js",
+  "templateRenderer.js",
+  "userSearch.js",
+  "payment-api/src/gatewayClient.js",
+  "auth-service/src/db/pool.js",
+  "file-storage-service/src/retentionJob.js",
+  "notification-worker/src/worker.js",
+];
+
+// Each of the 4 operational-incident rules maps to exactly one demo file, so
+// when the ticket text doesn't literally mention the filename (common when
+// an LLM paraphrases the incident rather than quoting the raw stack trace),
+// fall back to the rule's known file instead of giving up.
+const RULE_DEFAULT_FILE = {
+  "gateway-timeout": "payment-api/src/gatewayClient.js",
+  "db-pool-leak": "auth-service/src/db/pool.js",
+  "disk-cleanup": "file-storage-service/src/retentionJob.js",
+  "null-check": "notification-worker/src/worker.js",
+};
 
 // The mock tickets carry an explicit affectedFile/affectedLine field; real
 // Jira tickets won't, so fall back to scanning the fetched logs text (or the
 // ticket description, since attachments aren't always available) for one of
 // the known demo filenames — e.g. "at chargeCustomer
-// (watched-repo/paymentService.js:3:9)".
-function detectAffectedFile(ticket, logs) {
+// (watched-repo/paymentService.js:3:9)" — and finally to the rule's known
+// default file.
+function detectAffectedFile(ticket, logs, ruleId) {
   if (ticket.affectedFile) return ticket.affectedFile;
   const text = `${logs.stacktrace || ""}\n${logs.raw || ""}\n${ticket.description || ""}`;
-  return KNOWN_WATCHED_FILES.find((file) => text.includes(file)) ?? null;
+  const found = KNOWN_WATCHED_FILES.find((file) => text.includes(file));
+  return found ?? RULE_DEFAULT_FILE[ruleId] ?? null;
 }
 
 // Accepts "owner/repo" but also tolerates a full URL/.git suffix/trailing
@@ -101,9 +191,9 @@ function normalizeGithubRepoSlug(raw) {
     .replace(/\/+$/, "");
 }
 
-function buildRemoteUrl() {
-  const token = process.env.GITHUB_TOKEN;
-  const repo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
+async function buildRemoteUrl() {
+  const token = await resolveGithubToken();
+  const repo = normalizeGithubRepoSlug(configuredGithubRepo());
   if (!token || !repo) return null;
   return `https://x-access-token:${token}@github.com/${repo}.git`;
 }
@@ -171,7 +261,7 @@ async function ensureRepoInitialized() {
     await git.commit("chore: initial import of watched-repo demo files");
   }
 
-  const remoteUrl = buildRemoteUrl();
+  const remoteUrl = await buildRemoteUrl();
   if (remoteUrl) {
     await ensureRemoteConfigured(git, remoteUrl);
     await syncWithRemoteMain(git);
@@ -210,7 +300,7 @@ export async function createFixPr(ticketKey) {
     throw new Error(`No automated fixer available for ticket ${ticketKey}`);
   }
 
-  const affectedFile = detectAffectedFile(ticket, logs);
+  const affectedFile = detectAffectedFile(ticket, logs, ruleId);
   if (!affectedFile) {
     throw new Error(
       `Could not determine which watched-repo file ${ticketKey} relates to. ` +
@@ -245,8 +335,8 @@ export async function createFixPr(ticketKey) {
   const title = `[${ticket.key}] ${ticket.summary}`;
   const body = buildPrBody(ticket, logs, ruleId);
 
-  const githubToken = process.env.GITHUB_TOKEN;
-  const githubRepo = normalizeGithubRepoSlug(process.env.GITHUB_REPO);
+  const githubToken = await resolveGithubToken();
+  const githubRepo = normalizeGithubRepoSlug(configuredGithubRepo());
 
   let result;
   if (githubToken && githubRepo) {
